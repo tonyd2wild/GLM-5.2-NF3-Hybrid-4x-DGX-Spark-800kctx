@@ -33,9 +33,9 @@ Key portability facts (recon, 2026-07-07): sm_120 and sm_121 are the same ISA ti
 
 - [x] Recon: kernel source + full v2 runtime recovered from public sources (4-agent sweep)
 - [x] Fleet disk cleared (327GB/node landing zone on all 4 Sparks)
-- [ ] **← HERE:** aarch64 base image build on Asusi (`vllm-nf3-hybrid:base-arm64`)
-- [ ] NF3 v2 overlay + `.pth` hook + indexer fixes → `vllm-nf3-hybrid:probe`
-- [ ] 327GB checkpoint download (running on Spark4) + 200G-fabric fan-out
+- [x] aarch64 base image build (`vllm-nf3-hybrid:base-arm64`, 1h23m on a single Spark, exit 0)
+- [x] NF3 v2 overlay + `.pth` hook + CuteDSL runtime (`nvidia-cutlass-dsl==4.5.2` + path hook — base lacked it) → `vllm-nf3-hybrid:probe`, all imports verified. NOTE: this vLLM tree already contains the DSA indexer off-by-one fix (`+ 8` "reaper fix") — our +1 patch not needed.
+- [x] 327GB checkpoint downloaded (334G on disk, 96 files) — **← HERE:** fabric fan-out (step 1 Spark4→Bluey took 8m at ~680MB/s)
 - [ ] Single-node smoke → 4-node Ray TP4+DCP4 launch (adapt author's single-box compose to multi-node)
 - [ ] MTP-5 + tool-calling (glm47) + reasoning (glm45) from FIRST boot — no bare launches
 - [ ] Bench c1–c6 + max-context probe; beat 30 tok/s

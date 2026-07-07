@@ -29,6 +29,11 @@ docker cp "$OV/b12x/moe/fused/w4a16/prepare.py" "nf3bake:$SITE/b12x/moe/fused/w4
 docker cp "$OV/b12x/moe/fused/w4a16/host.py"    "nf3bake:$SITE/b12x/moe/fused/w4a16/host.py"
 docker cp "$OV/b12x/cute/fp4.py"                "nf3bake:$SITE/b12x/cute/fp4.py"
 
+# CuteDSL runtime (base image lacks it; author installed separately in his image)
+docker start nf3bake >/dev/null 2>&1 || true
+docker exec nf3bake python3 -m pip install --no-cache-dir "nvidia-cutlass-dsl==4.5.2" "nvidia-cutlass-dsl-libs-cu13==4.5.2" >/dev/null
+docker exec nf3bake bash -c "echo nvidia_cutlass_dsl/python_packages > $SITE/nvidia_cutlass_dsl.pth" 2>/dev/null || true
+
 # his warmup-fallback-patched MLA indexer (v2)
 docker cp "$OV/vllm/v1/attention/backends/mla/indexer.py" "nf3bake:$SITE/vllm/v1/attention/backends/mla/indexer.py"
 

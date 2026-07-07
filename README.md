@@ -36,9 +36,9 @@ Key portability facts (recon, 2026-07-07): sm_120 and sm_121 are the same ISA ti
 - [x] aarch64 base image build (`vllm-nf3-hybrid:base-arm64`, 1h23m on a single Spark, exit 0)
 - [x] NF3 v2 overlay + `.pth` hook + CuteDSL runtime (`nvidia-cutlass-dsl==4.5.2` + path hook — base lacked it) → `vllm-nf3-hybrid:probe`, all imports verified. NOTE: this vLLM tree already contains the DSA indexer off-by-one fix (`+ 8` "reaper fix") — our +1 patch not needed.
 - [x] 327GB checkpoint downloaded (334G on disk, 96 files) — **← HERE:** fabric fan-out (step 1 Spark4→Bluey took 8m at ~680MB/s)
-- [ ] Single-node smoke → 4-node Ray TP4+DCP4 launch (adapt author's single-box compose to multi-node)
-- [ ] MTP-5 + tool-calling (glm47) + reasoning (glm45) from FIRST boot — no bare launches
-- [ ] Bench c1–c6 + max-context probe; beat 30 tok/s
+- [x] **FIRST BOOT SUCCESSFUL 2026-07-07** — TP4/DCP4/MTP-5 @ 240K, **KV pool 876,588 tokens** (vs 657K on our QuantTrio 655K shape). Boot fixes: `HYBRID_MXFP8_TIER_JSON` env for the hardcoded /opt/venv tier path; his `b12x_sparse_indexer_warmup.py` (warmup-fallback patch) extracted from image layer 19 — not in any public repo.
+- [x] MTP-5 live (acceptance 3.3–3.7), tool-calling verified working from first boot, reasoning parser on
+- [ ] **← HERE** Bench: DCP4 first pass c1 19.9 / c2 30.5 / c3 35.7 / **c4 42.3** / c5 36.5 / c6 34.9 (512tok, temp0, accept 3.3–3.7). Speed campaign: DCP1/DCP2 speed shape, k sweep, capture 64 → target 30+
 - [ ] Publish (this repo goes public on success)
 
 ## Author's launch recipe (single-box reference, to be adapted)

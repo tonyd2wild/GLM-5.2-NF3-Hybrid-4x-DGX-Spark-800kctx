@@ -110,6 +110,17 @@ TP4 + DCP4 `ag_rs` interleave 1, `--kv-cache-dtype fp8`, `B12X_MLA_SPARSE`, `moe
 
 Known walls (author's WORKING_CONFIGS): cudagraph capture must cover `seqs×(1+k)`; `--max-num-batched-tokens` ≥2048 or NF3 graph capture breaks; `VLLM_DCP_SHARD_DRAFT=1` mandatory for MTP draft KV under DCP.
 
+## Tuning notes (measured, 2026-07-07)
+
+We swept MTP k and the `fuse_allreduce_rms` compile flag on both lanes. Findings:
+
+| lane | best config | why |
+|---|---|---|
+| CONTEXT (DCP4) | **k=3 + fuse_allreduce_rms** | long network-taxed steps: wasted draft passes hurt (k=3 acceptance ~3.0 is near-perfect), and fusing the per-layer allreduce+norm pays. +7.5% c1 vs k=5 unfused. |
+| FAST (DCP1) | **k=4, no fuse** | short local steps: the extra draft token amortizes (k=4 ties k=3 on median, wins peak 29.1 and aggregate 67.4); fuse doesn't help without the DCP network tax. |
+
+**k is lane-specific** — don't copy the speculative config between shapes. FAST-lane c1 medians ~24.4 across all configs; peaks up to 29 on predictable content. Pushing the median past 30 looks like NF3-kernel tuning for GB10's 48 SMs, not launch flags.
+
 ## Credits
 
 - **madeby561 (Hunter Wolf)** — the NF3 format, kernel, hybrid loader, and checkpoint. This is his work; we port it.

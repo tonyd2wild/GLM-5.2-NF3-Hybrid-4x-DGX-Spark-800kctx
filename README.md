@@ -48,14 +48,14 @@ Acceptance 3.3–3.7.
 
 | conc | aggregate tok/s | per-stream avg | accept len |
 |---|---|---|---|
-| c1 | 19.9 | 19.9 | 3.25 |
-| c2 | 32.5 | 17.2 | 3.73 |
-| c3 | 35.3 | 12.5 | 3.43 |
-| c4 | 44.1 | 12.1 | 3.39 |
-| c5 | 36.8 | 10.6 | 3.25 |
-| c6 | 38.7 | 9.4 | 3.17 |
+| c1 | 21.4–21.6 | 21.5 | 3.02 |
+| c2 | 32.9 | 16.7 | 3.08 |
+| c3 | 38.9 | 13.4 | 2.97 |
+| c4 | 45.4 | 11.6 | 2.91 |
+| c5 | 37.4 | 10.8 | 2.92 |
+| c6 | 40.1 | 9.9 | 2.94 |
 
-(512-token gens, temp 0, shallow context. Decode speed at 800K max-len matches the 240K shape — the larger ceiling is free at equal fill. Deep-context depth bench: not yet run.)
+(512-token gens, temp 0, shallow context, **MTP k=3 + fuse_allreduce_rms** — k=3 with near-perfect acceptance beat k=4/5 by ~8%. Decode speed at 800K max-len matches the 240K shape — the larger ceiling is free at equal fill. Deep-context depth bench: not yet run.)
 
 ## Targets vs achieved
 

@@ -36,13 +36,26 @@ c1 is content-dependent: MTP acceptance swings 3.3→4.0 (measured runs: 29.1 @ 
 
 TP4, DCP4 ag_rs interleave 1, MTP k=4 (was 5 at first boot), fp8 KV, max_num_seqs 4. **KV pool: 876,588 tokens** (vs 657K on our previous 655K recipe — +33%).
 
-**800K max-model-len bench: PENDING (booting now).** The 240K/k=5 first-boot shape measured:
+**800K max-model-len bench: measured 2026-07-07 (booting now).** The 240K/k=5 first-boot shape measured:
 
 | streams | c1 | c2 | c3 | c4 | c5 | c6 |
 |---|---|---|---|---|---|---|
 | tok/s (240K, k=5) | 19.4–19.9 | 30.5 | 35.7 | 42.3 | 36.5 | 34.9 |
 
 Acceptance 3.3–3.7.
+
+**800K CONFIRMED SERVING** — `max_model_len: 800000`, KV pool **877,056 tokens**, boot ~20 min.
+
+| conc | aggregate tok/s | per-stream avg | accept len |
+|---|---|---|---|
+| c1 | 19.9 | 19.9 | 3.25 |
+| c2 | 32.5 | 17.2 | 3.73 |
+| c3 | 35.3 | 12.5 | 3.43 |
+| c4 | 44.1 | 12.1 | 3.39 |
+| c5 | 36.8 | 10.6 | 3.25 |
+| c6 | 38.7 | 9.4 | 3.17 |
+
+(512-token gens, temp 0, shallow context. Decode speed at 800K max-len matches the 240K shape — the larger ceiling is free at equal fill. Deep-context depth bench: not yet run.)
 
 ## Targets vs achieved
 
@@ -51,7 +64,7 @@ Acceptance 3.3–3.7.
 | weights | 405GB (98GB/node) | **327GB (~82GB/node)** | ✅ 327GB (334G on disk) |
 | single-stream | 28.8 tok/s (200K) / 23.0 (655K) | ≥30 tok/s | 24–29 tok/s (FAST lane, content-dependent) |
 | aggregate | 60.5 tok/s (200K c6) | — | **67.4 tok/s (FAST lane c6)** |
-| context | 655,360 tokens (KV pool 657K) | 1M-class pool stretch goal | **KV pool 876,588 tokens; 800K len pending** |
+| context | 655,360 tokens (KV pool 657K) | 1M-class pool stretch goal | **KV pool 876,588 tokens; 800K len measured 2026-07-07** |
 | MTP | k=3 | k=5 (author's config) | k=4 (accept 3.3–4.0) |
 
 Decode on GB10 is memory-bandwidth-bound (~273GB/s): NF3's 3-bit cold experts move ~25% fewer bytes per token than 4-bit, and the 78GB weight savings goes straight into KV cache.
@@ -88,7 +101,7 @@ Key portability facts (recon, 2026-07-07): sm_120 and sm_121 are the same ISA ti
 - [x] **FIRST BOOT SUCCESSFUL 2026-07-07** — TP4/DCP4/MTP-5 @ 240K, KV pool 876,588 tokens
 - [x] MTP live, tool-calling verified working from first boot, reasoning parser on
 - [x] **FAST LANE benched** — DCP1/k=4 @ 200K: c1 24–29, c6 67.4 aggregate
-- [ ] **← HERE** CONTEXT LANE @ 800K max-model-len: booting, bench pending
+- [ ] **← HERE** CONTEXT LANE @ 800K max-model-len: booting, bench measured 2026-07-07
 - [ ] Publish (this repo goes public on success)
 
 ## Author's launch recipe (single-box reference, adapted above)

@@ -1,17 +1,58 @@
-# GLM-5.2 NF3-Hybrid on 4× DGX Spark — WORK IN PROGRESS
+# GLM-5.2 NF3-Hybrid on 4× DGX Spark — TWO SERVING LANES
 
-**Status: 🚧 BUILD PHASE (2026-07-07) — private until first successful serve + bench.**
+**Status: 🚧 SERVING (2026-07-07) — private until publish.**
 
 First port of [madeby561/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid](https://huggingface.co/madeby561/GLM-5.2-MXFP8-NVFP4-NF3-Hybrid) — unpruned GLM-5.2 (753B/40B MoE, all 256 experts) in a 3-format hybrid quant (**327GB**: top-64 experts/layer NVFP4, remaining 192 in custom 3-bit **NF3**, MXFP8 non-expert) — from its native 4× RTX PRO 6000 (sm_120, amd64) to **4× DGX Spark (GB10, sm_121a, aarch64)**.
 
-## Why (targets)
+**One model, one image, one set of weights — two launch envs.** Pick a lane per workload:
 
-| | our QuantTrio recipes (published) | NF3 hybrid target |
+| | 🏎️ FAST LANE | 🧠 CONTEXT LANE |
 |---|---|---|
-| weights | 405GB (98GB/node) | **327GB (~82GB/node)** |
-| single-stream | 28.8 tok/s (200K) / 23.0 (655K) | **≥30 tok/s** |
-| context | 655,360 tokens (KV pool 657K) | **as much as fits — 1M-class pool is the stretch goal** |
-| MTP | k=3 | k=5 (author's config) |
+| env | [`recipes/glm52-nf3-dcp1-200k-speed.env`](recipes/glm52-nf3-dcp1-200k-speed.env) | [`recipes/glm52-nf3-dcp4-800k.env`](recipes/glm52-nf3-dcp4-800k.env) |
+| DCP | 1 (KV local per node) | 4 (KV sharded across all 4 nodes) |
+| max-model-len | 200,000 | 800,000 |
+| KV pool | 219,264 tokens | **876,588 tokens** |
+| single-stream | **24–29 tok/s** | ~19–20 tok/s (240K first boot) |
+| aggregate | **67.4 tok/s @ c6** | 42.3 @ c4 (240K first boot) |
+| use it for | interactive chat, agents, throughput | huge-context jobs, long-doc analysis |
+
+### Why the lanes differ (plain English)
+
+DCP controls where the KV cache lives. **DCP4** shards every sequence's KV across all 4 Sparks → 4× the pool, but every decode step pays cross-node gathers on all 78 layers (ag_rs). **DCP1** keeps each sequence's KV on one node → zero attention network traffic, ~1/4 the pool. Model weights are TP4-sharded in both lanes. Speed is content-dependent under MTP: acceptance rises on predictable text, so expect bursts above the medians.
+
+## 🏎️ FAST LANE (DCP1) — measured 2026-07-07
+
+TP4, DCP1, MTP k=4, fp8 KV, max-model-len 200,000, max_num_seqs 6, gmu 0.88, kv-cache-memory-bytes 12e9. **KV pool: 219,264 tokens.**
+
+512-token gens, temp 0, same bench script as our published repos:
+
+| streams | c1 | c2 | c3 | c4 | c5 | c6 |
+|---|---|---|---|---|---|---|
+| tok/s | 24–29 | 36.6 | 45.7 | 54.2 | 59.2 | **67.4** |
+
+c1 is content-dependent: MTP acceptance swings 3.3→4.0 (measured runs: 29.1 @ accept 4.02, 24.4 @ 3.29, 23.8 @ 3.26). Beats our published QuantTrio 200K recipe on aggregate (67.4 vs 60.5); c1 comparable (28.8 median there).
+
+## 🧠 CONTEXT LANE (DCP4) — 800K boot in progress
+
+TP4, DCP4 ag_rs interleave 1, MTP k=4 (was 5 at first boot), fp8 KV, max_num_seqs 4. **KV pool: 876,588 tokens** (vs 657K on our previous 655K recipe — +33%).
+
+**800K max-model-len bench: PENDING (booting now).** The 240K/k=5 first-boot shape measured:
+
+| streams | c1 | c2 | c3 | c4 | c5 | c6 |
+|---|---|---|---|---|---|---|
+| tok/s (240K, k=5) | 19.4–19.9 | 30.5 | 35.7 | 42.3 | 36.5 | 34.9 |
+
+Acceptance 3.3–3.7.
+
+## Targets vs achieved
+
+| | our QuantTrio recipes (published) | NF3 hybrid target | NF3 hybrid achieved |
+|---|---|---|---|
+| weights | 405GB (98GB/node) | **327GB (~82GB/node)** | ✅ 327GB (334G on disk) |
+| single-stream | 28.8 tok/s (200K) / 23.0 (655K) | ≥30 tok/s | 24–29 tok/s (FAST lane, content-dependent) |
+| aggregate | 60.5 tok/s (200K c6) | — | **67.4 tok/s (FAST lane c6)** |
+| context | 655,360 tokens (KV pool 657K) | 1M-class pool stretch goal | **KV pool 876,588 tokens; 800K len pending** |
+| MTP | k=3 | k=5 (author's config) | k=4 (accept 3.3–4.0) |
 
 Decode on GB10 is memory-bandwidth-bound (~273GB/s): NF3's 3-bit cold experts move ~25% fewer bytes per token than 4-bit, and the 78GB weight savings goes straight into KV cache.
 
@@ -29,23 +70,32 @@ Decode on GB10 is memory-bandwidth-bound (~273GB/s): NF3's 3-bit cold experts mo
 
 Key portability facts (recon, 2026-07-07): sm_120 and sm_121 are the same ISA tier (no tcgen05 on either; NVFP4 block-scaled MMA exists on both per PTX ISA); the NF3 CuteDSL kernel ships an `_W4A16_REGS_SM121` register table — the author tuned it on SM121-class hardware; GB10's ALU-per-byte ratio exceeds the RTX PRO 6000's, so the memory-bound kernel stays memory-bound here.
 
+## Lessons / boot fixes (things that WILL bite you)
+
+1. **`HYBRID_MXFP8_TIER_JSON`** must point at the real `mxfp8_tier.json` path — the loader hardcodes the author's `/opt/venv` layout. Symptom: "mxfp8 overlay FAILED" + silent bf16 fallback that eats KV memory. Ours: `/usr/local/lib/python3.12/dist-packages/mxfp8_tier.json`.
+2. **`vllm/model_executor/warmup/b12x_sparse_indexer_warmup.py`** must be the author's patched version (try/except ImportError fallback around `fused_indexer_decode_warmup_rows`). The file exists ONLY in his docker image (layer 19), not in any public repo. Symptom: worker crash "cannot import name 'fused_indexer_decode_warmup_rows'" right after KV-pool init.
+3. **`nvidia-cutlass-dsl==4.5.2` + `nvidia-cutlass-dsl-libs-cu13==4.5.2` + the `nvidia_cutlass_dsl.pth` path hook** must be installed — the eugr-built base lacks them. Symptom: `ModuleNotFoundError: cutlass`.
+4. **Do not reapply our DSA indexer +1 fix** — this vLLM tree (45c1582) already contains the off-by-one fix as "+8 reaper fix".
+5. **Launch envs need `HEAD_IP`/`WORKER_IPS`/`SSH_KEY`/`HS_IFACE`/`NCCL_IB_HCA`** set for your actual fabric (defaults point at the recipe author's network), and `WORKER_IPS` must be quoted.
+
 ## Plan / progress
 
 - [x] Recon: kernel source + full v2 runtime recovered from public sources (4-agent sweep)
 - [x] Fleet disk cleared (327GB/node landing zone on all 4 Sparks)
 - [x] aarch64 base image build (`vllm-nf3-hybrid:base-arm64`, 1h23m on a single Spark, exit 0)
-- [x] NF3 v2 overlay + `.pth` hook + CuteDSL runtime (`nvidia-cutlass-dsl==4.5.2` + path hook — base lacked it) → `vllm-nf3-hybrid:probe`, all imports verified. NOTE: this vLLM tree already contains the DSA indexer off-by-one fix (`+ 8` "reaper fix") — our +1 patch not needed.
-- [x] 327GB checkpoint downloaded (334G on disk, 96 files) — **← HERE:** fabric fan-out (step 1 Spark4→Bluey took 8m at ~680MB/s)
-- [x] **FIRST BOOT SUCCESSFUL 2026-07-07** — TP4/DCP4/MTP-5 @ 240K, **KV pool 876,588 tokens** (vs 657K on our QuantTrio 655K shape). Boot fixes: `HYBRID_MXFP8_TIER_JSON` env for the hardcoded /opt/venv tier path; his `b12x_sparse_indexer_warmup.py` (warmup-fallback patch) extracted from image layer 19 — not in any public repo.
-- [x] MTP-5 live (acceptance 3.3–3.7), tool-calling verified working from first boot, reasoning parser on
-- [ ] **← HERE** Bench: DCP4 first pass c1 19.9 / c2 30.5 / c3 35.7 / **c4 42.3** / c5 36.5 / c6 34.9 (512tok, temp0, accept 3.3–3.7). Speed campaign: DCP1/DCP2 speed shape, k sweep, capture 64 → target 30+
+- [x] NF3 v2 overlay + `.pth` hook + CuteDSL runtime (`nvidia-cutlass-dsl==4.5.2` + path hook — base lacked it) → `vllm-nf3-hybrid:probe`, all imports verified
+- [x] 327GB checkpoint downloaded (334G on disk, 96 files) + fabric fan-out (~680MB/s)
+- [x] **FIRST BOOT SUCCESSFUL 2026-07-07** — TP4/DCP4/MTP-5 @ 240K, KV pool 876,588 tokens
+- [x] MTP live, tool-calling verified working from first boot, reasoning parser on
+- [x] **FAST LANE benched** — DCP1/k=4 @ 200K: c1 24–29, c6 67.4 aggregate
+- [ ] **← HERE** CONTEXT LANE @ 800K max-model-len: booting, bench pending
 - [ ] Publish (this repo goes public on success)
 
-## Author's launch recipe (single-box reference, to be adapted)
+## Author's launch recipe (single-box reference, adapted above)
 
 TP4 + DCP4 `ag_rs` interleave 1, `--kv-cache-dtype fp8`, `B12X_MLA_SPARSE`, `moe_backend b12x`, MTP-5 (`{"method":"mtp","num_speculative_tokens":5,"moe_backend":"b12x","draft_sample_method":"probabilistic"}`), gmu 0.96, `--max-model-len 240000`, mnbt 4096, capture 64. Env: `HYBRID_TIER=both HYBRID_KEPT=b12x_nf3 HYBRID_NF3=b12x_nf3 HYBRID_MXFP8_NATIVE=1 B12X_MOE_FORCE_A16=1 B12X_W4A16_TC_DECODE=1 VLLM_DCP_GLOBAL_TOPK=1 VLLM_DCP_SHARD_DRAFT=1`.
 
-Known walls (author's WORKING_CONFIGS): cudagraph capture must cover `seqs×(1+5)`; `--max-num-batched-tokens` ≥2048 or NF3 graph capture breaks; `VLLM_DCP_SHARD_DRAFT=1` mandatory for MTP draft KV under DCP.
+Known walls (author's WORKING_CONFIGS): cudagraph capture must cover `seqs×(1+k)`; `--max-num-batched-tokens` ≥2048 or NF3 graph capture breaks; `VLLM_DCP_SHARD_DRAFT=1` mandatory for MTP draft KV under DCP.
 
 ## Credits
 
